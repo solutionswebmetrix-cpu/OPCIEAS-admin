@@ -176,7 +176,7 @@ function RoutesWithAnimation() {
 
 export default function App() {
   return (
-    <BrowserRouter basename="/admin">
+    <BrowserRouter>
       <AuthProvider>
         <RoutesWithAnimation />
       </AuthProvider>
