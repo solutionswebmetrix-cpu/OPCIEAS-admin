@@ -25,6 +25,11 @@ interface AuthContextType {
   setUser: (user: User | null) => void;
 }
 
+const AUTH_API_BASE = (import.meta as any).env?.VITE_API_URL || '';
+const AUTH_LOGIN_URL = `${AUTH_API_BASE}/auth/login.php`;
+const AUTH_ME_URL = `${AUTH_API_BASE}/auth/me.php`;
+const AUTH_LOGOUT_URL = `${AUTH_API_BASE}/auth/logout.php`;
+
 const AuthContext = createContext<AuthContextType | null>(null);
 
 function useAuth() {
@@ -50,10 +55,15 @@ function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       try {
-        const { apiGet } = await import('./lib/api');
-        const res = await apiGet<any>('/auth/me.php');
-        const data = res?.data || res;
-        const user = data?.user || null;
+        const res = await fetch(AUTH_ME_URL, {
+          method: 'GET',
+          credentials: 'include',
+          headers: {
+            Accept: 'application/json',
+          },
+        });
+        const data = await res.json();
+        const user = data?.data?.user || data?.user || null;
         if (user) {
           localStorage.setItem('admin_user', JSON.stringify(user));
           setAuth({ authenticated: true, user, remember_token: null });
@@ -67,12 +77,19 @@ function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = async (email: string, password: string) => {
-    const { apiPost } = await import('./lib/api');
-    const res = await apiPost<any>('/auth/login.php', { email, password });
-    const data = res?.data || res;
-    const token = data?.remember_token || data?.token || res?.remember_token;
-    const user = data?.user || res?.user || null;
-    const redirect = data?.redirect || '/dashboard';
+    const res = await fetch(AUTH_LOGIN_URL, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json();
+    const token = data?.data?.remember_token || data?.remember_token || data?.data?.token || data?.token;
+    const user = data?.data?.user || data?.user || null;
+    const redirect = data?.data?.redirect || data?.redirect || '/dashboard';
     if (token) localStorage.setItem('admin_remember_token', token);
     if (user) localStorage.setItem('admin_user', JSON.stringify(user));
     setAuth({ authenticated: true, user, remember_token: token });
@@ -81,8 +98,13 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     try {
-      const { apiGet } = await import('./lib/api');
-      await apiGet('/auth/logout.php');
+      await fetch(AUTH_LOGOUT_URL, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          Accept: 'application/json',
+        },
+      });
     } catch {}
     localStorage.removeItem('admin_remember_token');
     localStorage.removeItem('admin_user');

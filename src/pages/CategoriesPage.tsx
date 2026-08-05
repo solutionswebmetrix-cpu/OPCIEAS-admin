@@ -4,7 +4,7 @@ import {
   Plus, FolderTree, Edit, Trash2, X, ArrowUp, ArrowDown,
   CheckCircle, GripVertical, Eye, Image as ImageIcon, Upload,
 } from 'lucide-react';
-import { apiGet, apiPost } from '../lib/api';
+import { apiGet, apiPost, apiFormData } from '../lib/api';
 import type { Category } from '../lib/types';
 
 export default function CategoriesPage() {
@@ -16,6 +16,7 @@ export default function CategoriesPage() {
     name: '', slug: '', description: '', sort_order: 1, status: 'Active', is_featured: false,
   });
   const [dragId, setDragId] = useState<string | null>(null);
+  const [categoryImageFile, setCategoryImageFile] = useState<File | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -53,17 +54,31 @@ export default function CategoriesPage() {
         status: form.status === 'Draft' ? 'inactive' : 'active',
         is_featured: !!form.is_featured,
       };
-      const res: any = await apiPost(editing ? '/admin/categories/update.php' : '/admin/categories/create.php', payload);
-      const category = res?.data || { ...payload, id: editing?.id || `C${Date.now()}` };
-      if (editing) {
-        setCategories(prev => prev.map(c => c.id === editing.id ? { ...c, ...category } as any : c));
+
+      let category: any = null;
+      if (categoryImageFile) {
+        const fd = new FormData();
+        if (editing?.id) fd.append('id', String(editing.id));
+        Object.entries(payload).forEach(([key, value]) => {
+          if (value !== undefined && value !== null) fd.append(key, String(value));
+        });
+        fd.append('image', categoryImageFile);
+        category = await apiFormData(editing ? '/admin/categories/update.php' : '/admin/categories/create.php', fd);
       } else {
-        setCategories(prev => [{ ...category, total_products: 0 }, ...prev]);
+        category = await apiPost(editing ? '/admin/categories/update.php' : '/admin/categories/create.php', payload);
+      }
+
+      const data = category?.data || { ...payload, id: editing?.id || `C${Date.now()}` };
+      if (editing) {
+        setCategories(prev => prev.map(c => c.id === editing.id ? { ...c, ...data } as any : c));
+      } else {
+        setCategories(prev => [{ ...data, total_products: 0 }, ...prev]);
       }
     } catch {
       if (editing) setCategories(prev => prev.map(c => c.id === editing.id ? { ...c, ...form } as any : c));
       else setCategories(prev => [...prev, { ...form, id: `C${Date.now()}`, total_products: 0 } as any]);
     }
+    setCategoryImageFile(null);
     setFormOpen(false);
   };
 
@@ -281,7 +296,7 @@ export default function CategoriesPage() {
                     <div className="sm:col-span-2">
                       <label className="admin-label">Category Image / Banner</label>
                       <div className="p-5 rounded-xl border-2 border-dashed border-slate-200 hover:border-emerald-400 transition-colors bg-slate-50/60">
-                        <input type="file" id="cat-img" accept="image/*" className="hidden" />
+                        <input type="file" id="cat-img" accept="image/*" className="hidden" onChange={(e) => setCategoryImageFile(e.target.files?.[0] || null)} />
                         <label htmlFor="cat-img" className="flex flex-col items-center justify-center gap-2 py-4 cursor-pointer">
                           <div className="w-12 h-12 rounded-xl bg-white shadow-sm flex items-center justify-center">
                             <Upload className="w-6 h-6 text-emerald-800" />

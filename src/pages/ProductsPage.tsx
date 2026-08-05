@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Search, Plus, Filter, Trash2, Edit, Eye, X, Package,
@@ -20,10 +20,34 @@ const statusStyles: Record<string, string> = {
   Draft: 'bg-slate-100 text-slate-700 border-slate-200',
 };
 
-const API_BASE = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000/api';
-const BACKEND_BASE = (import.meta as any).env?.VITE_BACKEND_URL || 'http://localhost:8000';
+const API_BASE =
+  (import.meta as any).env?.VITE_API_URL || '';
+const BACKEND_BASE =
+  (import.meta as any).env?.VITE_BACKEND_URL ||
+  (import.meta as any).env?.VITE_API_URL?.replace(/\/api\/?$/, '') ||
+  '';
 
 type ProductForm = Partial<Product> & { category_name?: string };
+
+type ProductFormModalProps = {
+  product: ProductForm;
+  onSubmit: (e: React.FormEvent) => void;
+  title: string;
+  submitLabel: string;
+  isEdit: boolean;
+  categories: Category[];
+  existingImages: Array<{ id?: string; url: string; is_primary?: boolean }>;
+  pendingImages: File[];
+  uploadedImages: string[];
+  setField: (k: keyof ProductForm, v: any) => void;
+  setFeatures: (next: string[]) => void;
+  setSpecs: (next: Record<string, string>) => void;
+  resolveImageUrl: (src?: string | null) => string;
+  handleImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  removeExistingImage: (index: number) => Promise<void>;
+  replacePrimaryImage: (file: File) => Promise<void>;
+  onClose: () => void;
+};
 
 const resolveImageUrl = (src?: string | null): string => {
   if (!src) return '';
@@ -54,6 +78,238 @@ const parseJsonObject = (v: any, fallback: Record<string, string> = {}): Record<
   return fallback;
 };
 
+function ProductFormModal({
+  product,
+  onSubmit,
+  title,
+  submitLabel,
+  isEdit,
+  categories,
+  existingImages,
+  pendingImages,
+  uploadedImages,
+  setField,
+  setFeatures,
+  setSpecs,
+  resolveImageUrl,
+  handleImageUpload,
+  removeExistingImage,
+  replacePrimaryImage,
+  onClose,
+}: ProductFormModalProps) {
+  const featuresList: string[] = Array.isArray(product.features) ? product.features : [];
+  const specsMap: Record<string, string> = (product.specs && typeof product.specs === 'object') ? product.specs as Record<string, string> : {};
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95, y: 20 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95, y: 20 }}
+      className="modal-content max-w-4xl"
+      onClick={e => e.stopPropagation()}
+    >
+      <form onSubmit={onSubmit}>
+        <div className="p-6 border-b border-slate-100 flex items-start justify-between sticky top-0 bg-white rounded-t-[20px] z-10">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center">
+              <Package className="w-6 h-6 text-emerald-800" />
+            </div>
+            <div>
+              <h3 className="font-heading font-bold text-slate-900 text-xl">{title}</h3>
+              <p className="text-sm text-slate-500 mt-0.5 font-sub">Fill product information</p>
+            </div>
+          </div>
+          <button type="button" onClick={onClose} className="h-9 w-9 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-500">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[65vh] overflow-y-auto">
+          <div className="sm:col-span-2">
+            <label className="admin-label">Product Name *</label>
+            <input required value={product.name || ''} onChange={e => setField('name', e.target.value)} className="admin-input" placeholder="Executive Office Chair Pro" />
+          </div>
+          <div>
+            <label className="admin-label">SKU</label>
+            <input value={product.sku || ''} onChange={e => setField('sku', e.target.value)} className="admin-input" placeholder="OPC-1001" />
+          </div>
+          <div>
+            <label className="admin-label">Category *</label>
+            <select required value={product.category_id || ''} onChange={e => setField('category_id', e.target.value)} className="admin-input">
+              <option value="">Select category</option>
+              {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="admin-label">Price (₹) *</label>
+            <input type="number" required min={0} value={product.price || 0} onChange={e => setField('price', Number(e.target.value))} className="admin-input" />
+          </div>
+          <div>
+            <label className="admin-label">Discount Price (₹)</label>
+            <input type="number" min={0} value={product.discount_price || 0} onChange={e => setField('discount_price', Number(e.target.value))} className="admin-input" />
+          </div>
+          <div>
+            <label className="admin-label">Stock Quantity</label>
+            <input type="number" min={0} value={product.stock_quantity || 0} onChange={e => setField('stock_quantity', Number(e.target.value))} className="admin-input" />
+          </div>
+          <div className="flex items-end gap-4">
+            <div className="flex-1">
+              <label className="admin-label">Status</label>
+              <select value={product.status || 'Pending'} onChange={e => setField('status', e.target.value)} className="admin-input">
+                {productStatuses.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer pb-2">
+              <input type="checkbox" checked={!!(product.is_featured ?? product.featured)} onChange={e => { setField('is_featured', e.target.checked ? 1 : 0); setField('featured', !!e.target.checked); }} className="h-4 w-4 rounded border-slate-300 text-emerald-800 focus:ring-emerald-800" />
+              <span className="admin-label mb-0">Featured</span>
+            </label>
+          </div>
+          <div className="sm:col-span-2">
+            <label className="admin-label">Short Description</label>
+            <input value={product.short_description || ''} onChange={e => setField('short_description', e.target.value)} className="admin-input" placeholder="One-liner for product cards" />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="admin-label">Full Description</label>
+            <textarea rows={4} value={product.description || ''} onChange={e => setField('description', e.target.value)} className="admin-input resize-none" placeholder="Detailed product description, materials, use-cases..." />
+          </div>
+          <div className="sm:col-span-2">
+            <div className="flex items-center justify-between mb-2">
+              <label className="admin-label mb-0">Features</label>
+              <button type="button" onClick={() => setFeatures([...featuresList, ''])} className="admin-btn admin-btn-secondary !py-1 !px-3 !text-xs">
+                <Plus className="w-3.5 h-3.5" /> Add Feature
+              </button>
+            </div>
+            <div className="space-y-2">
+              {featuresList.map((f, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input value={f} onChange={e => { const next = [...featuresList]; next[i] = e.target.value; setFeatures(next); }} className="admin-input !py-2" placeholder={`Feature ${i + 1}`} />
+                  <button type="button" onClick={() => setFeatures(featuresList.filter((_, idx) => idx !== i))} className="h-9 w-9 rounded-lg border border-slate-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200 flex items-center justify-center text-slate-500" title="Remove">
+                    <Minus className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+              {!featuresList.length && <p className="text-xs text-slate-400 font-sub italic">No features added yet.</p>}
+            </div>
+          </div>
+          <div className="sm:col-span-2">
+            <div className="flex items-center justify-between mb-2">
+              <label className="admin-label mb-0">Specifications</label>
+              <button type="button" onClick={() => setSpecs({ ...specsMap, [`Spec ${Object.keys(specsMap).length + 1}`]: '' })} className="admin-btn admin-btn-secondary !py-1 !px-3 !text-xs">
+                <Plus className="w-3.5 h-3.5" /> Add Spec
+              </button>
+            </div>
+            <div className="space-y-2">
+              {Object.entries(specsMap).map(([k, v], i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input value={k} onChange={e => { const next = { ...specsMap }; delete next[k]; next[e.target.value || `Spec ${i + 1}`] = v; setSpecs(next); }} className="admin-input !py-2 flex-1 font-medium" placeholder="Spec name (e.g. Material)" />
+                  <input value={v} onChange={e => { const next = { ...specsMap }; next[k] = e.target.value; setSpecs(next); }} className="admin-input !py-2 flex-[1.4]" placeholder="Spec value" />
+                  <button type="button" onClick={() => { const next = { ...specsMap }; delete next[k]; setSpecs(next); }} className="h-9 w-9 rounded-lg border border-slate-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200 flex items-center justify-center text-slate-500" title="Remove">
+                    <Minus className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+              {!Object.keys(specsMap).length && <p className="text-xs text-slate-400 font-sub italic">No specifications added yet.</p>}
+            </div>
+          </div>
+          <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="admin-label">SEO Title</label>
+              <input value={product.meta_title || ''} onChange={e => setField('meta_title', e.target.value)} className="admin-input" placeholder="Browser tab title / OG title" />
+            </div>
+            <div>
+              <label className="admin-label">SEO Description</label>
+              <input value={product.meta_description || ''} onChange={e => setField('meta_description', e.target.value)} className="admin-input" placeholder="155-character search snippet" />
+            </div>
+          </div>
+          <div className="sm:col-span-2">
+            <label className="admin-label">Product Images</label>
+            <div className="p-4 rounded-xl border-2 border-dashed border-slate-200 hover:border-emerald-400 transition-colors bg-slate-50/60">
+              <input type="file" id="prod-imgs" accept="image/*" multiple className="hidden" onChange={handleImageUpload} />
+              <label htmlFor="prod-imgs" className="flex flex-col items-center justify-center gap-2 py-4 cursor-pointer">
+                <div className="w-12 h-12 rounded-xl bg-white shadow-sm flex items-center justify-center">
+                  <Upload className="w-6 h-6 text-emerald-800" />
+                </div>
+                <p className="text-sm font-semibold text-slate-700">Click to upload or drag images</p>
+                <p className="text-xs text-slate-500 font-sub">PNG, JPG, WebP up to 5MB each</p>
+              </label>
+              {existingImages.length > 0 && (
+                <div className="mt-4">
+                  <p className="text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">Existing Gallery ({existingImages.length})</p>
+                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                    {existingImages.map((img, i) => {
+                      const src = resolveImageUrl(img.url);
+                      return (
+                        <div key={i} className="relative aspect-square rounded-lg overflow-hidden bg-slate-100 border border-slate-200 group">
+                          {img.is_primary && <span className="absolute top-1 left-1 z-10 bg-amber-500 text-white text-[10px] px-1.5 py-0.5 rounded font-semibold">Primary</span>}
+                          {src ? (
+                            <img src={src} alt="" loading="lazy" className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="absolute inset-0 flex items-center justify-center"><ImageIcon className="w-5 h-5 text-slate-400" /></div>
+                          )}
+                          {isEdit && (
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-1.5 gap-1">
+                              {img.is_primary && (
+                                <label className="flex-1 relative">
+                                  <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) replacePrimaryImage(f); if (e.target) e.target.value = ''; }} />
+                                  <span className="block w-full text-center bg-emerald-700 text-white text-[10px] py-1 rounded cursor-pointer font-semibold hover:bg-emerald-800">Replace</span>
+                                </label>
+                              )}
+                              <button type="button" onClick={() => removeExistingImage(i)} title="Delete image" className="bg-red-600 text-white rounded p-1 hover:bg-red-700 shrink-0">
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {pendingImages.length > 0 && (
+                <div className="mt-4">
+                  <p className="text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">Pending Uploads ({pendingImages.length})</p>
+                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                    {pendingImages.map((f, i) => {
+                      const preview = typeof URL !== 'undefined' && typeof (URL as any).createObjectURL === 'function' ? (URL as any).createObjectURL(f) : '';
+                      return (
+                        <div key={i} className="relative aspect-square rounded-lg overflow-hidden bg-slate-100 border border-emerald-200">
+                          <span className="absolute top-1 left-1 z-10 bg-emerald-600 text-white text-[10px] px-1.5 py-0.5 rounded font-semibold">New</span>
+                          {preview ? (
+                            <img src={preview} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400 p-1 text-center">
+                              <ImageIcon className="w-5 h-5" />
+                              <span className="text-[9px] truncate w-full mt-1">{f.name}</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {uploadedImages.length > 0 && pendingImages.length === 0 && !existingImages.length && (
+                <div className="grid grid-cols-4 gap-2 mt-4">
+                  {uploadedImages.map((img, i) => (
+                    <div key={i} className="relative aspect-square rounded-lg overflow-hidden bg-slate-200">
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <ImageIcon className="w-6 h-6 text-slate-500" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+        <div className="p-6 border-t border-slate-100 flex justify-end gap-2 bg-slate-50 rounded-b-[20px] sticky bottom-0">
+          <button type="button" onClick={onClose} className="admin-btn admin-btn-secondary">Cancel</button>
+          <button type="submit" className="admin-btn admin-btn-primary">{submitLabel}</button>
+        </div>
+      </form>
+    </motion.div>
+  );
+}
+
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -70,7 +326,7 @@ export default function ProductsPage() {
   const perPage = 6;
   const [form, setForm] = useState<ProductForm>({
     name: '', sku: '', category_id: '', price: 0, discount_price: 0,
-    stock_quantity: 0, short_description: '', description: '', status: 'Pending',
+    stock_quantity: 0, short_description: '', description: '', status: 'Published',
     is_featured: false, features: [], specs: {}, meta_title: '', meta_description: '',
   });
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
@@ -113,23 +369,54 @@ export default function ProductsPage() {
     }
   }, [createOpen]);
 
+  const loadProducts = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res: any = await apiGet('/products/list.php', {
+        status: tab !== 'All' ? tab : undefined,
+        category_id: catFilter !== 'All' ? catFilter : undefined,
+      });
+      const list = Array.isArray(res?.data) ? res.data : (res?.data?.data || res?.data?.items || []);
+      if (Array.isArray(list)) {
+        setProducts(list as Product[]);
+      } else {
+        setProducts([]);
+      }
+      return list as Product[];
+    } catch {
+      setProducts([]);
+      return [] as Product[];
+    } finally {
+      setLoading(false);
+    }
+  }, [tab, catFilter]);
+
   useEffect(() => {
     (async () => {
       try {
-        setLoading(true);
-        const res: any = await apiGet('/products/list.php', {
-          status: tab !== 'All' ? tab : undefined,
-          category_id: catFilter !== 'All' ? catFilter : undefined,
-        });
-        const list = Array.isArray(res?.data) ? res.data : (res?.data?.data || res?.data?.items || []);
-        if (Array.isArray(list)) setProducts(list as Product[]);
         const catRes: any = await apiGet('/categories/list.php');
         const cats = Array.isArray(catRes?.data) ? catRes.data : (catRes?.data?.data || []);
         if (Array.isArray(cats)) setCategories(cats as Category[]);
       } catch {}
-      finally { setLoading(false); }
+      await loadProducts();
     })();
-  }, [tab, catFilter]);
+  }, [loadProducts]);
+
+  useEffect(() => {
+    const reloadOnActive = () => {
+      if (document.visibilityState !== 'hidden') {
+        void loadProducts();
+      }
+    };
+
+    window.addEventListener('focus', reloadOnActive);
+    document.addEventListener('visibilitychange', reloadOnActive);
+
+    return () => {
+      window.removeEventListener('focus', reloadOnActive);
+      document.removeEventListener('visibilitychange', reloadOnActive);
+    };
+  }, [loadProducts]);
 
   const filtered = products.filter(p => {
     const matchesSearch = !search || (p.name || '').toLowerCase().includes(search.toLowerCase())
@@ -153,29 +440,32 @@ export default function ProductsPage() {
   const handleBulkAction = async (action: string) => {
     const ids = Array.from(selected);
     if (!ids.length) return;
+
     try {
       if (action === 'delete') {
         for (const id of ids) {
-          try { await apiPost('/admin/products/delete.php', { id }); } catch {}
+          await apiPost('/admin/products/delete.php', { id });
         }
-        setProducts(prev => prev.filter(p => !selected.has(p.id)));
       } else {
         for (const id of ids) {
-          try { await apiPost('/admin/products/update.php', { id, status: action }); } catch {}
+          await apiPost('/admin/products/update.php', { id, status: action });
         }
-        setProducts(prev => prev.map(p => selected.has(p.id) ? { ...p, status: action } : p));
       }
+      await loadProducts();
     } catch {
-      if (action === 'delete') setProducts(prev => prev.filter(p => !selected.has(p.id)));
-      else setProducts(prev => prev.map(p => selected.has(p.id) ? { ...p, status: action } : p));
+      await loadProducts();
     }
+
     setSelected(new Set());
   };
 
   const deleteProduct = async (p: Product) => {
-    try { await apiPost('/admin/products/delete.php', { id: p.id }); }
-    catch {}
-    setProducts(prev => prev.filter(x => x.id !== p.id));
+    try {
+      await apiPost('/admin/products/delete.php', { id: p.id });
+      await loadProducts();
+    } catch {
+      await loadProducts();
+    }
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -252,12 +542,12 @@ export default function ProductsPage() {
           }
         }
       }
-      setProducts(prev => [created as Product, ...prev]);
+      await loadProducts();
     } catch {
-      setProducts(prev => [{ ...form, id: `P${Date.now()}`, created_at: new Date().toISOString(), features: [], specs: {} } as Product, ...prev]);
+      await loadProducts();
     }
     setCreateOpen(false);
-    setForm({ name: '', sku: '', category_id: '', price: 0, discount_price: 0, stock_quantity: 0, short_description: '', description: '', status: 'Pending', is_featured: false, features: [], specs: {}, meta_title: '', meta_description: '' });
+    setForm({ name: '', sku: '', category_id: '', price: 0, discount_price: 0, stock_quantity: 0, short_description: '', description: '', status: 'Published', is_featured: false, features: [], specs: {}, meta_title: '', meta_description: '' });
     setUploadedImages([]);
     setPendingImages([]);
     setExistingImages([]);
@@ -297,15 +587,39 @@ export default function ProductsPage() {
           await apiFormData('/admin/products/images.php', fd);
         }
       }
-      setProducts(prev => prev.map(p => p.id === editOpen.id ? { ...editOpen, ...payload, features: feats, specs: specsObj, is_featured: !!payload.is_featured, featured: !!payload.is_featured } as Product : p));
+      await loadProducts();
     } catch {
-      setProducts(prev => prev.map(p => p.id === editOpen.id ? editOpen : p));
+      await loadProducts();
     }
     setEditOpen(null);
     setUploadedImages([]);
     setPendingImages([]);
     setExistingImages([]);
   };
+
+  const setField = useCallback((k: keyof ProductForm, v: any) => {
+    if (editOpen) {
+      setEditOpen(prev => prev ? ({ ...prev, [k]: v } as Product) : prev);
+      return;
+    }
+    setForm(prev => ({ ...prev, [k]: v }));
+  }, [editOpen]);
+
+  const setFeatures = useCallback((next: string[]) => {
+    setField('features', next);
+  }, [setField]);
+
+  const setSpecs = useCallback((next: Record<string, string>) => {
+    setField('specs', next);
+  }, [setField]);
+
+  const handleModalClose = useCallback(() => {
+    setCreateOpen(false);
+    setEditOpen(null);
+    setUploadedImages([]);
+    setPendingImages([]);
+    setExistingImages([]);
+  }, []);
 
   const getCatName = (id?: string | null) => categories.find(c => c.id === id)?.name || '—';
 
@@ -321,228 +635,6 @@ export default function ProductsPage() {
       Status: item.status || '',
     }));
     downloadCsv('products.csv', headers, rows);
-  };
-
-  const ProductFormModal = ({ product, onSubmit, title, submitLabel }: {
-    product: ProductForm; onSubmit: (e: React.FormEvent) => void; title: string; submitLabel: string;
-  }) => {
-    const isEdit = !!editOpen;
-    const set = (k: keyof ProductForm, v: any) => {
-      if (isEdit) setEditOpen({ ...editOpen!, [k]: v } as Product);
-      else setForm(prev => ({ ...prev, [k]: v }));
-    };
-    const featuresList: string[] = Array.isArray(product.features) ? product.features : [];
-    const specsMap: Record<string, string> = (product.specs && typeof product.specs === 'object') ? product.specs as Record<string, string> : {};
-    const setFeatures = (next: string[]) => set('features', next);
-    const setSpecs = (next: Record<string, string>) => set('specs', next);
-    return (
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        className="modal-content max-w-4xl"
-        onClick={e => e.stopPropagation()}
-      >
-        <form onSubmit={onSubmit}>
-          <div className="p-6 border-b border-slate-100 flex items-start justify-between sticky top-0 bg-white rounded-t-[20px] z-10">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center">
-                <Package className="w-6 h-6 text-emerald-800" />
-              </div>
-              <div>
-                <h3 className="font-heading font-bold text-slate-900 text-xl">{title}</h3>
-                <p className="text-sm text-slate-500 mt-0.5 font-sub">Fill product information</p>
-              </div>
-            </div>
-            <button type="button" onClick={() => { setCreateOpen(false); setEditOpen(null); setUploadedImages([]); setPendingImages([]); setExistingImages([]); }} className="h-9 w-9 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-500">
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-          <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[65vh] overflow-y-auto">
-            <div className="sm:col-span-2">
-              <label className="admin-label">Product Name *</label>
-              <input required value={product.name || ''} onChange={e => set('name', e.target.value)} className="admin-input" placeholder="Executive Office Chair Pro" />
-            </div>
-            <div>
-              <label className="admin-label">SKU</label>
-              <input value={product.sku || ''} onChange={e => set('sku', e.target.value)} className="admin-input" placeholder="OPC-1001" />
-            </div>
-            <div>
-              <label className="admin-label">Category *</label>
-              <select required value={product.category_id || ''} onChange={e => set('category_id', e.target.value)} className="admin-input">
-                <option value="">Select category</option>
-                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="admin-label">Price (₹) *</label>
-              <input type="number" required min={0} value={product.price || 0} onChange={e => set('price', Number(e.target.value))} className="admin-input" />
-            </div>
-            <div>
-              <label className="admin-label">Discount Price (₹)</label>
-              <input type="number" min={0} value={product.discount_price || 0} onChange={e => set('discount_price', Number(e.target.value))} className="admin-input" />
-            </div>
-            <div>
-              <label className="admin-label">Stock Quantity</label>
-              <input type="number" min={0} value={product.stock_quantity || 0} onChange={e => set('stock_quantity', Number(e.target.value))} className="admin-input" />
-            </div>
-            <div className="flex items-end gap-4">
-              <div className="flex-1">
-                <label className="admin-label">Status</label>
-                <select value={product.status || 'Pending'} onChange={e => set('status', e.target.value)} className="admin-input">
-                  {productStatuses.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-              <label className="flex items-center gap-2 cursor-pointer pb-2">
-                <input type="checkbox" checked={!!(product.is_featured ?? product.featured)} onChange={e => { set('is_featured', e.target.checked ? 1 : 0); set('featured', !!e.target.checked); }} className="h-4 w-4 rounded border-slate-300 text-emerald-800 focus:ring-emerald-800" />
-                <span className="admin-label mb-0">Featured</span>
-              </label>
-            </div>
-            <div className="sm:col-span-2">
-              <label className="admin-label">Short Description</label>
-              <input value={product.short_description || ''} onChange={e => set('short_description', e.target.value)} className="admin-input" placeholder="One-liner for product cards" />
-            </div>
-            <div className="sm:col-span-2">
-              <label className="admin-label">Full Description</label>
-              <textarea rows={4} value={product.description || ''} onChange={e => set('description', e.target.value)} className="admin-input resize-none" placeholder="Detailed product description, materials, use-cases..." />
-            </div>
-            <div className="sm:col-span-2">
-              <div className="flex items-center justify-between mb-2">
-                <label className="admin-label mb-0">Features</label>
-                <button type="button" onClick={() => setFeatures([...featuresList, ''])} className="admin-btn admin-btn-secondary !py-1 !px-3 !text-xs">
-                  <Plus className="w-3.5 h-3.5" /> Add Feature
-                </button>
-              </div>
-              <div className="space-y-2">
-                {featuresList.map((f, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <input value={f} onChange={e => { const next = [...featuresList]; next[i] = e.target.value; setFeatures(next); }} className="admin-input !py-2" placeholder={`Feature ${i + 1}`} />
-                    <button type="button" onClick={() => setFeatures(featuresList.filter((_, idx) => idx !== i))} className="h-9 w-9 rounded-lg border border-slate-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200 flex items-center justify-center text-slate-500" title="Remove">
-                      <Minus className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
-                {!featuresList.length && <p className="text-xs text-slate-400 font-sub italic">No features added yet.</p>}
-              </div>
-            </div>
-            <div className="sm:col-span-2">
-              <div className="flex items-center justify-between mb-2">
-                <label className="admin-label mb-0">Specifications</label>
-                <button type="button" onClick={() => setSpecs({ ...specsMap, [`Spec ${Object.keys(specsMap).length + 1}`]: '' })} className="admin-btn admin-btn-secondary !py-1 !px-3 !text-xs">
-                  <Plus className="w-3.5 h-3.5" /> Add Spec
-                </button>
-              </div>
-              <div className="space-y-2">
-                {Object.entries(specsMap).map(([k, v], i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <input value={k} onChange={e => { const next = { ...specsMap }; delete next[k]; next[e.target.value || `Spec ${i + 1}`] = v; setSpecs(next); }} className="admin-input !py-2 flex-1 font-medium" placeholder="Spec name (e.g. Material)" />
-                    <input value={v} onChange={e => { const next = { ...specsMap }; next[k] = e.target.value; setSpecs(next); }} className="admin-input !py-2 flex-[1.4]" placeholder="Spec value" />
-                    <button type="button" onClick={() => { const next = { ...specsMap }; delete next[k]; setSpecs(next); }} className="h-9 w-9 rounded-lg border border-slate-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200 flex items-center justify-center text-slate-500" title="Remove">
-                      <Minus className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
-                {!Object.keys(specsMap).length && <p className="text-xs text-slate-400 font-sub italic">No specifications added yet.</p>}
-              </div>
-            </div>
-            <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="admin-label">SEO Title</label>
-                <input value={product.meta_title || ''} onChange={e => set('meta_title', e.target.value)} className="admin-input" placeholder="Browser tab title / OG title" />
-              </div>
-              <div>
-                <label className="admin-label">SEO Description</label>
-                <input value={product.meta_description || ''} onChange={e => set('meta_description', e.target.value)} className="admin-input" placeholder="155-character search snippet" />
-              </div>
-            </div>
-            <div className="sm:col-span-2">
-              <label className="admin-label">Product Images</label>
-              <div className="p-4 rounded-xl border-2 border-dashed border-slate-200 hover:border-emerald-400 transition-colors bg-slate-50/60">
-                <input type="file" id="prod-imgs" accept="image/*" multiple className="hidden" onChange={handleImageUpload} />
-                <label htmlFor="prod-imgs" className="flex flex-col items-center justify-center gap-2 py-4 cursor-pointer">
-                  <div className="w-12 h-12 rounded-xl bg-white shadow-sm flex items-center justify-center">
-                    <Upload className="w-6 h-6 text-emerald-800" />
-                  </div>
-                  <p className="text-sm font-semibold text-slate-700">Click to upload or drag images</p>
-                  <p className="text-xs text-slate-500 font-sub">PNG, JPG, WebP up to 5MB each</p>
-                </label>
-                {existingImages.length > 0 && (
-                  <div className="mt-4">
-                    <p className="text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">Existing Gallery ({existingImages.length})</p>
-                    <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-                      {existingImages.map((img, i) => {
-                        const src = resolveImageUrl(img.url);
-                        return (
-                          <div key={i} className="relative aspect-square rounded-lg overflow-hidden bg-slate-100 border border-slate-200 group">
-                            {img.is_primary && <span className="absolute top-1 left-1 z-10 bg-amber-500 text-white text-[10px] px-1.5 py-0.5 rounded font-semibold">Primary</span>}
-                            {src ? (
-                              <img src={src} alt="" loading="lazy" className="w-full h-full object-cover" />
-                            ) : (
-                              <div className="absolute inset-0 flex items-center justify-center"><ImageIcon className="w-5 h-5 text-slate-400" /></div>
-                            )}
-                            {isEdit && (
-                              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-1.5 gap-1">
-                                {img.is_primary && (
-                                  <label className="flex-1 relative">
-                                    <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) replacePrimaryImage(f); if (e.target) e.target.value = ''; }} />
-                                    <span className="block w-full text-center bg-emerald-700 text-white text-[10px] py-1 rounded cursor-pointer font-semibold hover:bg-emerald-800">Replace</span>
-                                  </label>
-                                )}
-                                <button type="button" onClick={() => removeExistingImage(i)} title="Delete image" className="bg-red-600 text-white rounded p-1 hover:bg-red-700 shrink-0">
-                                  <Trash2 className="w-3 h-3" />
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-                {pendingImages.length > 0 && (
-                  <div className="mt-4">
-                    <p className="text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">Pending Uploads ({pendingImages.length})</p>
-                    <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-                      {pendingImages.map((f, i) => {
-                        const preview = typeof URL !== 'undefined' && typeof (URL as any).createObjectURL === 'function' ? (URL as any).createObjectURL(f) : '';
-                        return (
-                          <div key={i} className="relative aspect-square rounded-lg overflow-hidden bg-slate-100 border border-emerald-200">
-                            <span className="absolute top-1 left-1 z-10 bg-emerald-600 text-white text-[10px] px-1.5 py-0.5 rounded font-semibold">New</span>
-                            {preview ? (
-                              <img src={preview} alt="" className="w-full h-full object-cover" />
-                            ) : (
-                              <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400 p-1 text-center">
-                                <ImageIcon className="w-5 h-5" />
-                                <span className="text-[9px] truncate w-full mt-1">{f.name}</span>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-                {uploadedImages.length > 0 && pendingImages.length === 0 && !existingImages.length && (
-                  <div className="grid grid-cols-4 gap-2 mt-4">
-                    {uploadedImages.map((img, i) => (
-                      <div key={i} className="relative aspect-square rounded-lg overflow-hidden bg-slate-200">
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <ImageIcon className="w-6 h-6 text-slate-500" />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-          <div className="p-6 border-t border-slate-100 flex justify-end gap-2 bg-slate-50 rounded-b-[20px] sticky bottom-0">
-            <button type="button" onClick={() => { setCreateOpen(false); setEditOpen(null); setUploadedImages([]); setPendingImages([]); setExistingImages([]); }} className="admin-btn admin-btn-secondary">Cancel</button>
-            <button type="submit" className="admin-btn admin-btn-primary">{submitLabel}</button>
-          </div>
-        </form>
-      </motion.div>
-    );
   };
 
   return (
@@ -720,8 +812,13 @@ export default function ProductsPage() {
                         <Edit className="w-4 h-4" />
                       </button>
                       {p.status === 'Pending' && (
-                        <button onClick={() => {
-                          setProducts(prev => prev.map(x => x.id === p.id ? { ...x, status: 'Published' } : x));
+                        <button onClick={async () => {
+                          try {
+                            await apiPost('/admin/products/update.php', { id: p.id, status: 'Published' });
+                            await loadProducts();
+                          } catch {
+                            await loadProducts();
+                          }
                         }} className="h-8 w-8 rounded-lg hover:bg-emerald-50 flex items-center justify-center text-emerald-700" title="Approve">
                           <CheckCircle className="w-4 h-4" />
                         </button>
@@ -769,13 +866,49 @@ export default function ProductsPage() {
 
       <AnimatePresence>
         {createOpen && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="modal-overlay" onClick={() => { setCreateOpen(false); setUploadedImages([]); setPendingImages([]); }}>
-            <ProductFormModal product={form} onSubmit={submitCreate} title="Add New Product" submitLabel="Create Product" />
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="modal-overlay" onClick={handleModalClose}>
+            <ProductFormModal
+              product={form}
+              onSubmit={submitCreate}
+              title="Add New Product"
+              submitLabel="Create Product"
+              isEdit={false}
+              categories={categories}
+              existingImages={existingImages}
+              pendingImages={pendingImages}
+              uploadedImages={uploadedImages}
+              setField={setField}
+              setFeatures={setFeatures}
+              setSpecs={setSpecs}
+              resolveImageUrl={resolveImageUrl}
+              handleImageUpload={handleImageUpload}
+              removeExistingImage={removeExistingImage}
+              replacePrimaryImage={replacePrimaryImage}
+              onClose={handleModalClose}
+            />
           </motion.div>
         )}
         {editOpen && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="modal-overlay" onClick={() => { setEditOpen(null); setUploadedImages([]); setPendingImages([]); }}>
-            <ProductFormModal product={editOpen} onSubmit={submitEdit} title="Edit Product" submitLabel="Save Changes" />
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="modal-overlay" onClick={handleModalClose}>
+            <ProductFormModal
+              product={editOpen}
+              onSubmit={submitEdit}
+              title="Edit Product"
+              submitLabel="Save Changes"
+              isEdit={true}
+              categories={categories}
+              existingImages={existingImages}
+              pendingImages={pendingImages}
+              uploadedImages={uploadedImages}
+              setField={setField}
+              setFeatures={setFeatures}
+              setSpecs={setSpecs}
+              resolveImageUrl={resolveImageUrl}
+              handleImageUpload={handleImageUpload}
+              removeExistingImage={removeExistingImage}
+              replacePrimaryImage={replacePrimaryImage}
+              onClose={handleModalClose}
+            />
           </motion.div>
         )}
         {viewOpen && (
@@ -832,7 +965,15 @@ export default function ProductsPage() {
               </div>
               <div className="p-6 border-t border-slate-100 flex justify-end gap-2 bg-slate-50 rounded-b-[20px]">
                 <button onClick={() => { setViewOpen(null); setEditOpen(viewOpen); }} className="admin-btn admin-btn-secondary"><Edit className="w-4 h-4" /> Edit</button>
-                {viewOpen.status === 'Pending' && <button onClick={() => { setProducts(prev => prev.map(x => x.id === viewOpen.id ? { ...x, status: 'Published' } : x)); setViewOpen(null); }} className="admin-btn admin-btn-primary"><CheckCircle className="w-4 h-4" /> Approve & Publish</button>}
+                {viewOpen.status === 'Pending' && <button onClick={async () => {
+                  try {
+                    await apiPost('/admin/products/update.php', { id: viewOpen.id, status: 'Published' });
+                    await loadProducts();
+                  } catch {
+                    await loadProducts();
+                  }
+                  setViewOpen(null);
+                }} className="admin-btn admin-btn-primary"><CheckCircle className="w-4 h-4" /> Approve & Publish</button>}
               </div>
             </motion.div>
           </motion.div>
