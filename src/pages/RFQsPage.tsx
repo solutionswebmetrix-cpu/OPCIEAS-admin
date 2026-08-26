@@ -283,6 +283,15 @@ export default function RFQsPage() {
                     <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{view.description}</p>
                   </div>
                 </div>
+                {(view.project_type || view.sample_requirement || view.custom_dimensions || view.frame_colour || view.modification_requirements) && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {view.project_type && <div className="p-3 rounded-xl bg-slate-50 border border-slate-100"><p className="text-[11px] text-slate-500 font-sub uppercase tracking-wider">Project Type</p><p className="text-sm font-bold text-slate-800">{view.project_type}</p></div>}
+                    {view.sample_requirement && <div className="p-3 rounded-xl bg-slate-50 border border-slate-100"><p className="text-[11px] text-slate-500 font-sub uppercase tracking-wider">Sample Requirement</p><p className="text-sm font-bold text-slate-800">{view.sample_requirement}</p></div>}
+                    {view.custom_dimensions && <div className="p-3 rounded-xl bg-slate-50 border border-slate-100"><p className="text-[11px] text-slate-500 font-sub uppercase tracking-wider">Custom Dimensions</p><p className="text-sm font-bold text-slate-800">{view.custom_dimensions}</p></div>}
+                    {view.frame_colour && <div className="p-3 rounded-xl bg-slate-50 border border-slate-100"><p className="text-[11px] text-slate-500 font-sub uppercase tracking-wider">Frame Colour / Finish</p><p className="text-sm font-bold text-slate-800">{view.frame_colour}</p></div>}
+                    {view.modification_requirements && <div className="md:col-span-2 p-3 rounded-xl bg-slate-50 border border-slate-100"><p className="text-[11px] text-slate-500 font-sub uppercase tracking-wider">Modification Requirements</p><p className="text-sm font-bold text-slate-800 whitespace-pre-wrap">{view.modification_requirements}</p></div>}
+                  </div>
+                )}
               </div>
               <div className="p-6 border-t border-slate-100 bg-slate-50 rounded-b-[20px] space-y-3">
                 {feedback ? (

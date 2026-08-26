@@ -140,6 +140,17 @@ function ProductFormModal({
             </select>
           </div>
           <div>
+            <label className="admin-label">Subcategory</label>
+            <input value={product.subcategory || ''} onChange={e => setField('subcategory', e.target.value)} className="admin-input" placeholder="Kindergarten, Primary, Hostel Cot, etc." />
+          </div>
+          <div>
+            <label className="admin-label">Supply Type</label>
+            <select value={product.supply_type || 'IN_HOUSE'} onChange={e => setField('supply_type', e.target.value)} className="admin-input">
+              <option value="IN_HOUSE">In-House Manufacturing</option>
+              <option value="PARTNER">Partner Supply</option>
+            </select>
+          </div>
+          <div>
             <label className="admin-label">Price (₹) *</label>
             <input type="number" required min={0} value={product.price || 0} onChange={e => setField('price', Number(e.target.value))} className="admin-input" />
           </div>
@@ -170,6 +181,34 @@ function ProductFormModal({
           <div className="sm:col-span-2">
             <label className="admin-label">Full Description</label>
             <textarea rows={4} value={product.description || ''} onChange={e => setField('description', e.target.value)} className="admin-input resize-none" placeholder="Detailed product description, materials, use-cases..." />
+          </div>
+          <div>
+            <label className="admin-label">Dimensions</label>
+            <input value={product.dimensions && typeof product.dimensions === 'object' ? JSON.stringify(product.dimensions) : (typeof product.dimensions === 'string' ? product.dimensions : '')} onChange={e => { try { const parsed = JSON.parse(e.target.value || '{}'); setField('dimensions', parsed); } catch { setField('dimensions', e.target.value || 'Available on request'); } }} className="admin-input" placeholder='{"L": 1800, "W": 900, "H": 350}' />
+          </div>
+          <div>
+            <label className="admin-label">Materials Used</label>
+            <input value={product.materials_used || product.material || ''} onChange={e => { setField('materials_used', e.target.value); setField('material', e.target.value); }} className="admin-input" placeholder="Mild Steel, Powder Coated Finish" />
+          </div>
+          <div>
+            <label className="admin-label">Weight</label>
+            <input value={product.weight || ''} onChange={e => setField('weight', e.target.value)} className="admin-input" placeholder="1,300 grams" />
+          </div>
+          <div>
+            <label className="admin-label">Packaging Specifications</label>
+            <input value={product.packaging_specifications || ''} onChange={e => setField('packaging_specifications', e.target.value)} className="admin-input" placeholder="Export carton / standard packaging" />
+          </div>
+          <div>
+            <label className="admin-label">Warranty Terms</label>
+            <input value={product.warranty_terms || ''} onChange={e => setField('warranty_terms', e.target.value)} className="admin-input" placeholder="12 Months Warranty on domestic supply." />
+          </div>
+          <div>
+            <label className="admin-label">Variants</label>
+            <input value={Array.isArray(product.variants) ? product.variants.join(', ') : typeof product.variants === 'string' ? product.variants : ''} onChange={e => setField('variants', e.target.value ? e.target.value.split(',').map(v => v.trim()).filter(Boolean) : [])} className="admin-input" placeholder="Standard, Luxury, Premium" />
+          </div>
+          <div className="flex items-center gap-3 pt-6">
+            <input type="checkbox" checked={!!product.export_available} onChange={e => setField('export_available', e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-emerald-800 focus:ring-emerald-800" />
+            <label className="admin-label mb-0">Export Applicable</label>
           </div>
           <div className="sm:col-span-2">
             <div className="flex items-center justify-between mb-2">
@@ -325,9 +364,10 @@ export default function ProductsPage() {
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const perPage = 6;
   const [form, setForm] = useState<ProductForm>({
-    name: '', sku: '', category_id: '', price: 0, discount_price: 0,
+    name: '', sku: '', category_id: '', subcategory: '', price: 0, discount_price: 0,
     stock_quantity: 0, short_description: '', description: '', status: 'Published',
     is_featured: false, features: [], specs: {}, meta_title: '', meta_description: '',
+    supply_type: 'IN_HOUSE', dimensions: {}, materials_used: '', packaging_specifications: '', warranty_terms: '12 Months Warranty on domestic supply.', weight: '', variants: [], export_available: false,
   });
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
   const [pendingImages, setPendingImages] = useState<File[]>([]);
@@ -515,8 +555,16 @@ export default function ProductsPage() {
     try {
       const payload: any = {
         ...form,
+        supply_type: form.supply_type || 'IN_HOUSE',
         features: Array.isArray(form.features) ? form.features.filter(Boolean) : [],
-        specifications: (form.specs && typeof form.specs === 'object') ? form.specs : {},
+        specifications: (form.specs && typeof form.specs === 'object') ? { ...form.specs, 'Supply Type': form.supply_type || 'IN_HOUSE' } : { 'Supply Type': form.supply_type || 'IN_HOUSE' },
+        dimensions: form.dimensions && typeof form.dimensions === 'object' ? form.dimensions : (form.dimensions ? { details: String(form.dimensions) } : {}),
+        materials_used: form.materials_used || form.material || '',
+        packaging_specifications: form.packaging_specifications || '',
+        warranty_terms: form.warranty_terms || '12 Months Warranty on domestic supply.',
+        weight: form.weight || '',
+        variants: Array.isArray(form.variants) ? form.variants : (form.variants ? String(form.variants).split(',').map(v => v.trim()).filter(Boolean) : []),
+        export_available: form.export_available ? 1 : 0,
         is_featured: form.is_featured ? 1 : 0,
         meta_title: form.meta_title || '',
         meta_description: form.meta_description || '',
@@ -563,7 +611,9 @@ export default function ProductsPage() {
         id: editOpen.id,
         name: editOpen.name,
         slug: editOpen.slug,
+        supply_type: editOpen.supply_type || 'IN_HOUSE',
         category_id: editOpen.category_id,
+        subcategory: editOpen.subcategory || '',
         sku: editOpen.sku,
         short_description: editOpen.short_description,
         description: editOpen.description,
@@ -572,7 +622,14 @@ export default function ProductsPage() {
         stock_quantity: editOpen.stock_quantity,
         status: editOpen.status,
         features: feats,
-        specifications: specsObj,
+        specifications: { ...specsObj, 'Supply Type': editOpen.supply_type || 'IN_HOUSE' },
+        dimensions: editOpen.dimensions && typeof editOpen.dimensions === 'object' ? editOpen.dimensions : (editOpen.dimensions ? { details: String(editOpen.dimensions) } : {}),
+        materials_used: editOpen.materials_used || editOpen.material || '',
+        packaging_specifications: editOpen.packaging_specifications || '',
+        warranty_terms: editOpen.warranty_terms || '12 Months Warranty on domestic supply.',
+        weight: editOpen.weight || '',
+        variants: Array.isArray(editOpen.variants) ? editOpen.variants : (editOpen.variants ? String(editOpen.variants).split(',').map(v => v.trim()).filter(Boolean) : []),
+        export_available: !!(editOpen.export_available),
         is_featured: (editOpen.is_featured ?? editOpen.featured) ? 1 : 0,
         meta_title: editOpen.meta_title || '',
         meta_description: editOpen.meta_description || '',

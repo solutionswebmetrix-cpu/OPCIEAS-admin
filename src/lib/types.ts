@@ -31,6 +31,7 @@ export interface Product {
   id: string;
   seller_id?: string;
   category_id: string | null;
+  subcategory?: string | null;
   name: string;
   slug: string;
   sku?: string | null;
@@ -38,13 +39,23 @@ export interface Product {
   short_description?: string | null;
   long_desc?: string | null;
   description?: string | null;
+  key_features?: string[];
   features: string[];
+  supply_type?: 'IN_HOUSE' | 'PARTNER' | null;
   specs: Record<string, string>;
   specifications?: Record<string, any> | string | null;
   dimensions?: Record<string, any> | string | null;
   material?: string | null;
+  materials_used?: string | null;
   color?: string | null;
   warranty_months?: number | null;
+  warranty_terms?: string | null;
+  packaging_specifications?: string | null;
+  export_available?: boolean;
+  export_badge?: string | null;
+  weight?: string | null;
+  variants?: string[] | Record<string, any> | null;
+  tags?: string[] | Record<string, any> | null;
   min_order_quantity?: number;
   max_order_quantity?: number | null;
   unit?: string;
@@ -214,6 +225,7 @@ export interface RFQ {
   phone?: string;
   category?: string;
   product_name?: string;
+  product_sku?: string;
   quantity?: number;
   budget_range_min?: number | null;
   budget_range_max?: number | null;
@@ -221,6 +233,12 @@ export interface RFQ {
   description?: string;
   status?: string;
   is_read?: boolean;
+  project_type?: string;
+  custom_dimensions?: string;
+  frame_colour?: string;
+  modification_requirements?: string;
+  sample_requirement?: string;
+  specification_notes?: string;
   created_at?: string;
 }
 
