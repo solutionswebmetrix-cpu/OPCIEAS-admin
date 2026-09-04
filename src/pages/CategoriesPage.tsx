@@ -15,6 +15,7 @@ export default function CategoriesPage() {
   const [form, setForm] = useState<Partial<Category>>({
     name: '', slug: '', description: '', sort_order: 1, status: 'Active', is_featured: false,
   });
+  const [error, setError] = useState<string | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
   const [categoryImageFile, setCategoryImageFile] = useState<File | null>(null);
 
@@ -22,10 +23,12 @@ export default function CategoriesPage() {
     (async () => {
       try {
         setLoading(true);
-        const res: any = await apiGet('/categories/list.php');
+        const res: any = await apiGet('/admin/categories/list.php');
         const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res?.data?.data) ? res.data.data : []);
-        if (Array.isArray(list)) setCategories(list as (Category & { total_products?: number })[]);
-      } catch {}
+        setCategories(list as (Category & { total_products?: number })[]);
+      } catch (err: any) {
+        setError(err?.message || 'Failed to load categories from the backend.');
+      }
       finally { setLoading(false); }
     })();
   }, []);
@@ -44,6 +47,7 @@ export default function CategoriesPage() {
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     try {
       const payload = {
         id: editing?.id,
@@ -68,15 +72,16 @@ export default function CategoriesPage() {
         category = await apiPost(editing ? '/admin/categories/update.php' : '/admin/categories/create.php', payload);
       }
 
-      const data = category?.data || { ...payload, id: editing?.id || `C${Date.now()}` };
+      if (!category?.success) throw new Error(category?.message || 'Failed to save category.');
+      const data = category.data;
       if (editing) {
         setCategories(prev => prev.map(c => c.id === editing.id ? { ...c, ...data } as any : c));
       } else {
         setCategories(prev => [{ ...data, total_products: 0 }, ...prev]);
       }
-    } catch {
-      if (editing) setCategories(prev => prev.map(c => c.id === editing.id ? { ...c, ...form } as any : c));
-      else setCategories(prev => [...prev, { ...form, id: `C${Date.now()}`, total_products: 0 } as any]);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to save category.');
+      return;
     }
     setCategoryImageFile(null);
     setFormOpen(false);
@@ -84,9 +89,14 @@ export default function CategoriesPage() {
 
   const remove = async (c: Category) => {
     if (!confirm(`Delete category "${c.name}"?`)) return;
-    try { await apiPost('/admin/categories/delete.php', { id: c.id }); }
-    catch {}
-    setCategories(prev => prev.filter(x => x.id !== c.id));
+    setError(null);
+    try {
+      const result: any = await apiPost('/admin/categories/delete.php', { id: c.id });
+      if (!result?.success) throw new Error(result?.message || 'Failed to delete category.');
+      setCategories(prev => prev.filter(x => x.id !== c.id));
+    } catch (err: any) {
+      setError(err?.message || 'Failed to delete category.');
+    }
   };
 
   const move = (id: string, dir: 'up' | 'down') => {
@@ -112,6 +122,8 @@ export default function CategoriesPage() {
           <Plus className="w-4 h-4" /> Add Category
         </button>
       </div>
+
+      {error && <div className="rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700 font-sub">{error}</div>}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="admin-card p-5">
