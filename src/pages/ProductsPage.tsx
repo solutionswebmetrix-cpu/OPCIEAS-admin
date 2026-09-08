@@ -462,7 +462,7 @@ export default function ProductsPage() {
     const matchesSearch = !search || (p.name || '').toLowerCase().includes(search.toLowerCase())
       || (p.sku || '').toLowerCase().includes(search.toLowerCase());
     const matchesTab = tab === 'All' || p.status === tab;
-    const matchesCat = catFilter === 'All' || p.category_id === catFilter;
+    const matchesCat = catFilter === 'All' || String(p.category_id ?? '') === String(catFilter);
     return matchesSearch && matchesTab && matchesCat;
   });
 
@@ -581,9 +581,6 @@ export default function ProductsPage() {
           if (i === 0 && !existingImages.some(ei => ei.is_primary)) {
             fd.append('image', file);
             await apiFormData('/admin/products/images.php', fd);
-            try {
-              await apiPost('/admin/products/images.php', { product_id: createdId, action: 'set_primary', image_id: '' } as any);
-            } catch {}
           } else {
             fd.append('image', file);
             await apiFormData('/admin/products/images.php', fd);
@@ -678,7 +675,7 @@ export default function ProductsPage() {
     setExistingImages([]);
   }, []);
 
-  const getCatName = (id?: string | null) => categories.find(c => c.id === id)?.name || '—';
+  const getCatName = (id?: string | null) => categories.find(c => String(c.id) === String(id ?? ''))?.name || '—';
 
   const exportProducts = () => {
     const headers = ['ID', 'Name', 'Category', 'Price', 'Discount', 'Stock', 'Status'];

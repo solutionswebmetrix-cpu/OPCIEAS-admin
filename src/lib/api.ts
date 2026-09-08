@@ -1,7 +1,7 @@
 const envApiBase =
   (import.meta as any).env?.VITE_API_URL ||
   (import.meta as any).env?.VITE_API_BASE_URL ||
-  '';
+  '/api';
 
 export const API_BASE_URL: string = envApiBase.replace(/\/$/, '');
 
