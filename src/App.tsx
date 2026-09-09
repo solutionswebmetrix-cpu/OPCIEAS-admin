@@ -25,7 +25,7 @@ interface AuthContextType {
   setUser: (user: User | null) => void;
 }
 
-const AUTH_API_BASE = (import.meta as any).env?.VITE_API_URL || '';
+const AUTH_API_BASE = ((import.meta as any).env?.VITE_API_URL || '/api').replace(/\/$/, '');
 const AUTH_LOGIN_URL = `${AUTH_API_BASE}/auth/login.php`;
 const AUTH_ME_URL = `${AUTH_API_BASE}/auth/me.php`;
 const AUTH_LOGOUT_URL = `${AUTH_API_BASE}/auth/logout.php`;
