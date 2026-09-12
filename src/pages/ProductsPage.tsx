@@ -25,7 +25,7 @@ const API_BASE =
 const BACKEND_BASE =
   (import.meta as any).env?.VITE_BACKEND_URL ||
   (import.meta as any).env?.VITE_API_URL?.replace(/\/api\/?$/, '') ||
-  '';
+  ((import.meta as any).env?.PROD ? 'https://api.opcieas.com' : '');
 
 type ProductForm = Partial<Product> & { category_name?: string };
 
@@ -51,11 +51,11 @@ type ProductFormModalProps = {
 
 const resolveImageUrl = (src?: string | null): string => {
   if (!src) return '';
-  if (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('data:')) return src;
-  if (src.startsWith('/uploads/')) return `${BACKEND_BASE}${src}`;
-  if (src.startsWith('uploads/')) return `${BACKEND_BASE}/${src}`;
-  if (src.startsWith('/')) return `${BACKEND_BASE}${src}`;
-  return src;
+  const normalized = src.trim();
+  if (/^(https?:|data:|blob:)/i.test(normalized)) return normalized;
+  let path = normalized.replace(/^\/+/, '');
+  if (!path.includes('/')) path = `uploads/products/${path}`;
+  return BACKEND_BASE ? `${BACKEND_BASE.replace(/\/$/, '')}/${path}` : `/${path}`;
 };
 
 const parseJsonArray = (v: any, fallback: string[] = []): string[] => {
